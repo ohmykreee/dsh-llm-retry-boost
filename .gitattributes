@@ -1,0 +1,11 @@
+# Normalize every text file to LF in the repository, whatever the checkout
+# platform says; the package ships JavaScript and YAML consumed on every OS.
+* text=auto eol=lf
+
+# Binary assets keep their bytes untouched.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ico binary
+*.svg -text
