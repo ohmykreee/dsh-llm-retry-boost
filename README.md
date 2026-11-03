@@ -74,9 +74,11 @@ delay(n) = min(initialDelayMs × 2^(n-1) × jitter, maxDelayMs)
 
 - **重试预算**：`maxRetries`（`0` = 一直重试，直到服务恢复）
 - **等待曲线**：`initialDelayMs`（首次等待）、`maxDelayMs`（等待上限）、`jitterRatio`（抖动）
-- **其他行为**：`respectRetryAfter`、`configErrorBehavior`、`logRetries`、`enabled`
+- **其他行为**：`respectRetryAfter`、`configErrorBehavior`、`logRetries`
 
-每个字段都带一句说明和生效范围；被 profile 覆盖过的字段会显示「已覆盖」和「恢复默认」。改完点 **保存**，值会写进当前 profile 的配置并立即生效，**不需要重启**——插件在每次失败时读取当前值，而不是在启动时快照一次。
+页首会实时显示按当前填写值算出来的曲线（例如「不限次数，首次等待 1s，之后翻倍，封顶 60s，抖动 ±10%」）。每个字段都带一句说明和生效范围；被 profile 覆盖过的字段会显示「已覆盖」和「恢复默认」。改完点 **保存**，值会写进当前 profile 的配置并立即生效，**不需要重启**——插件在每次失败时读取当前值，而不是在启动时快照一次。
+
+**插件本身的开关不在这个页面里**：用插件页这一行右侧的开关就行。关掉等于这一行没加载，插件不注册任何监听，完全回到内置的重试执行器——这就是「关闭后默认禁用」。
 
 白名单（`retryableCodes` / `retryableHttpStatuses`）**故意不放进表单**：它们决定的是「哪些失败归本插件管」，改动应该走下面 3.2 的 YAML，和它所在的 patch 一起被 review。
 
@@ -103,7 +105,7 @@ delay(n) = min(initialDelayMs × 2^(n-1) × jitter, maxDelayMs)
 
 | 字段 | 默认 | 说明 |
 |---|---|---|
-| `enabled` | `true` | 关掉后监听还在，但每个失败都原样交给内置执行器——所以可以在插件页面里随时再打开，不用重装。 |
+| `enabled` | `true` | 仅 YAML 逃生口，表单里没有：日常开关用插件页这一行的开关。设为 `false` 时行仍然挂着，但每个失败都原样交给内置执行器。 |
 | `retryableCodes` | 内置 5 类 | 进入无限重试的失败码白名单。想连 `TRANSPORT` 都不无限重试（比如 baseURL 写错时快速失败），把它从列表里删掉。 |
 | `retryableHttpStatuses` | `408,425,429,500,502,503,504` | 匹配 `HTTP_<status>` 或 `failure.status`。 |
 | `maxRetries` | `0` | `0` = 无限；`>0` = 最多重试这么多次，用完就按失败结束当前 step（**不会**再叠加内置的 5 次）。 |
@@ -145,11 +147,11 @@ node test/client.test.mjs
 
 `test/policy.test.mjs` 用一个小型的 Cordis waterfall（`prepend` 顺序、`next()` 链、`session/event` feed）驱动真实的 `apply()`，断言：退避曲线与封顶、抖动区间、`Retry-After` 封顶、`step/start` 归零、配置错误委派、`bounded` 沿用内置预算与退避、有限 `maxRetries` 的终止、abort 不重试、卸载清理、「本插件先于内置执行器拿到失败」，以及 `.volatile()` 引用被读穿、改值后下一次失败立即按新值决策。
 
-`test/client.test.mjs` 用一个极小的 React 替身驱动浏览器半身（`window.__ModuleLoader__` 工厂 + 组件函数），断言：注册的槽位与 key、字典、字段与默认值、只读/加载/不可用状态、保存时产生的精确 `set`/`unset` 操作、以及逐字段的非法值拦截。
+`test/client.test.mjs` 用一个极小的 React 替身驱动浏览器半身（`window.__ModuleLoader__` 工厂 + 组件函数），断言：注册的槽位与 key、字典、字段与默认值、只读/加载/不可用状态、保存时产生的精确 `set`/`unset` 操作、逐字段的非法值拦截、每个字段在中英文里都有标签和说明、以及页首曲线预览的文字。
 
 另外验证过的（本机）：
 
-- 把行在 Plugin Manager 里关掉再打开后，`Config.listConfigs` 的 `status` 从 `absent` 变成 `schema`，投影出的 JSON Schema 里八个可编辑字段带 `x-cordis.volatile: true`，两个白名单没有——说明宿主加载了 `Config`，Settings 会把它们投影成表单。
+- 把行在 Plugin Manager 里关掉再打开后，`Config.listConfigs` 的 `status` 从 `absent` 变成 `schema`，投影出的 JSON Schema 里七个可编辑字段带 `x-cordis.volatile: true`，`enabled` 和两个白名单没有——说明宿主加载了 `Config`，Settings 只会把七个字段投影成表单，开关归插件行的开关。
 - 通过 profile 的 junction 路径（`--preserve-symlinks`）直接加载 `lib/index.js`，`Config(...)` 校验、默认值、`resolveSettings` 读穿引用都正常。
 
 ---

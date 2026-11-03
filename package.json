@@ -1,6 +1,6 @@
 {
   "name": "dsh-llm-retry-boost",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Unlimited capped-backoff retries for transient model-request failures, with configuration-class failures kept on the shipped retry policy.",
   "license": "MIT",

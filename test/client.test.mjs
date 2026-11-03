@@ -104,7 +104,6 @@ function makeState(overrides = {}) {
     writable: true,
     revision: 7,
     value: {
-      enabled: true,
       maxRetries: 0,
       initialDelayMs: 1000,
       maxDelayMs: 60000,
@@ -114,7 +113,6 @@ function makeState(overrides = {}) {
       logRetries: true,
     },
     base: {
-      enabled: true,
       maxRetries: 0,
       initialDelayMs: 1000,
       maxDelayMs: 60000,
@@ -125,6 +123,20 @@ function makeState(overrides = {}) {
     },
     user: {},
     ...overrides,
+  }
+}
+
+/**
+ * Build a dictionary reader over one shipped dictionary, with `{name}`
+ * interpolation, so form copy is exercised with real strings.
+ * @param dictionary - `zh` or `en`.
+ * @returns the reader.
+ */
+function makeT(dictionary) {
+  return (key, vars) => {
+    const template = dictionary[key]
+    assert.equal(typeof template, 'string', `missing copy for "${key}"`)
+    return template.replace(/\{(\w+)\}/g, (whole, name) => String(vars?.[name] ?? whole))
   }
 }
 
@@ -216,7 +228,6 @@ test('the page renders every operator-facing field with its effective value', ()
   const byId = new Map(controls.map((node) => [node.props.id, node.props]))
   assert.deepEqual([...byId.keys()].sort(), [
     'dsh-lrb-configErrorBehavior',
-    'dsh-lrb-enabled',
     'dsh-lrb-initialDelayMs',
     'dsh-lrb-jitterRatio',
     'dsh-lrb-logRetries',
@@ -231,13 +242,16 @@ test('the page renders every operator-facing field with its effective value', ()
   assert.equal(byId.get('dsh-lrb-jitterRatio').value, '0.1')
   assert.equal(byId.get('dsh-lrb-respectRetryAfter').checked, true)
   assert.equal(byId.get('dsh-lrb-configErrorBehavior').value, 'delegate')
-  assert.equal(byId.get('dsh-lrb-enabled').checked, true)
 
-  // The whitelists stay out of the form on purpose.
   const markup = textOf(tree)
+  // The row switch owns on/off, the allow-lists stay in YAML: neither is a form
+  // field here, and the unit suffix belongs to the numeric controls.
+  assert.ok(!markup.includes('dsh-lrb-enabled'))
   assert.ok(!markup.includes('retryableCodes'))
   assert.ok(!markup.includes('retryableHttpStatuses'))
   assert.ok(markup.includes('initialDelayMsHint'))
+  assert.ok(markup.includes('unitMs'))
+  assert.ok(markup.includes('unitTimes'))
 })
 
 test('the page marks an overridden field and offers a reset', () => {
@@ -338,9 +352,56 @@ test('field parsing mirrors the Host validation bounds', () => {
   assert.equal(parseField(field('respectRetryAfter'), true), true)
 })
 
-// ---------------------------------------------------------------------------
-// Runner
-// ---------------------------------------------------------------------------
+test('every field and section has copy in both languages', () => {
+  const mod = loadModule()
+  const { FIELDS, SECTIONS, dictionaries } = mod.__test
+  const chrome = [
+    'title', 'summary', 'intro', 'budget', 'budgetHint', 'wait', 'waitHint', 'other',
+    'behaviorDelegate', 'behaviorBounded', 'unitMs', 'unitTimes',
+    'preview', 'previewInvalid', 'attemptsUnlimited', 'attemptsLimited',
+    'save', 'saving', 'saved', 'discard', 'reset', 'overridden', 'defaultTag',
+    'invalidNumber', 'invalidInteger', 'invalidRange', 'saveFailed',
+    'loading', 'unavailable', 'readOnly',
+  ]
+
+  for (const [language, dictionary] of Object.entries(dictionaries)) {
+    assert.equal(typeof dictionary.title, 'string', `${language}: title must not be empty`)
+    for (const key of chrome) {
+      assert.equal(typeof dictionary[key], 'string', `${language}: missing copy for "${key}"`)
+    }
+    for (const section of SECTIONS) {
+      assert.equal(typeof dictionary[section], 'string', `${language}: missing section "${section}"`)
+    }
+    for (const field of FIELDS) {
+      assert.equal(typeof dictionary[field.key], 'string', `${language}: missing label for "${field.key}"`)
+      assert.equal(typeof dictionary[`${field.key}Hint`], 'string', `${language}: missing hint for "${field.key}"`)
+    }
+  }
+})
+
+test('the preview line describes the curve the draft would produce', () => {
+  const mod = loadModule()
+  const { previewOf, draftFrom } = mod.__test
+  const tEn = makeT(mod.__test.dictionaries.en)
+  const state = makeState()
+
+  assert.equal(
+    previewOf(draftFrom(state), tEn),
+    'Current: unlimited, first wait 1s, doubling, capped at 60s, jitter ±10%',
+  )
+
+  const staged = { ...draftFrom(state), maxRetries: '3', initialDelayMs: '250', maxDelayMs: '900000', jitterRatio: '0.25' }
+  assert.equal(
+    previewOf(staged, tEn),
+    'Current: at most 3 times, first wait 250ms, doubling, capped at 900s, jitter ±25%',
+  )
+
+  assert.equal(
+    previewOf({ ...draftFrom(state), initialDelayMs: 'abc' }, tEn),
+    mod.__test.dictionaries.en.previewInvalid,
+  )
+})
+
 
 let failures = 0
 for (const [name, fn] of cases) {
