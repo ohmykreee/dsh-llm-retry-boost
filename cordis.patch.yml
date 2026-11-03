@@ -1,9 +1,14 @@
 # Bundle row for dsh-llm-retry-boost.
 #
-# This patch is a layer: it only inserts this plugin's own row. Tune the
-# `config` below (or override the row from your profile's cordis.patch.yml) to
-# control the policy. The shipped @deepseek-ai/dsh-llm-retry executor stays
-# mounted: the plugin delegates non-transient failures to it.
+# This patch is a layer: it only inserts this plugin's own row. The tunable
+# fields below are also editable from the Plugins page (they are the row's
+# volatile config fields, projected by the Settings service), and a save from
+# that page lands in your profile's cordis.patch.yml. Keep this list as the
+# shipped defaults; edit the row here for deployment pins, or from the UI for
+# day-to-day tuning. The whitelists are YAML-only: they decide which failures
+# the plugin owns, so a change belongs next to the code that documents it.
+# The shipped @deepseek-ai/dsh-llm-retry executor stays mounted: the plugin
+# delegates non-transient failures to it.
 - insert:
     - id: llm-retry-boost
       name: dsh-llm-retry-boost

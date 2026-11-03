@@ -12,15 +12,17 @@
 
 import assert from 'node:assert/strict'
 
-import { apply } from '../lib/index.js'
+import { apply } from '../lib/engine.js'
 import {
   DEFAULT_NORMAL_BACKOFF,
   computeDelay,
   defaultBackoff,
   defaultBudget,
   isTransientFailure,
+  plainValue,
   policyKeyOf,
   resolveSettings,
+  unwrapConfig,
 } from '../lib/policy.js'
 
 /** Ordered list of `[name, fn]` cases. */
@@ -251,6 +253,105 @@ test('the policy key changes with behaviour and ignores cosmetic keys', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Volatile configuration (the Plugins page form)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a stand-in for a Host `.volatile()` reference: a frozen object whose
+ * `get()` reads a cell the test can move, exactly like the loader swaps the
+ * value behind a form write without remounting the plugin.
+ * @param initial - starting value.
+ * @returns the reference and its writer.
+ */
+function volatileCell(initial) {
+  let current = initial
+  return {
+    ref: Object.freeze({ get: () => current }),
+    write: (next) => {
+      current = next
+    },
+  }
+}
+
+test('volatile references are read through, plain values pass untouched', () => {
+  const cell = volatileCell(4000)
+  assert.equal(plainValue(cell.ref), 4000)
+  cell.write(8000)
+  assert.equal(plainValue(cell.ref), 8000)
+
+  assert.equal(plainValue(1500), 1500)
+  assert.equal(plainValue(false), false)
+  const codes = ['SERVER']
+  assert.equal(plainValue(codes), codes)
+  assert.equal(plainValue(undefined), undefined)
+  assert.deepEqual(unwrapConfig({ a: cell.ref, b: 7, c: codes }), { a: 8000, b: 7, c: codes })
+  assert.equal(unwrapConfig('nope'), 'nope')
+})
+
+test('a fully volatile config resolves like a plain one', () => {
+  const cells = {
+    enabled: volatileCell(true),
+    maxRetries: volatileCell(3),
+    initialDelayMs: volatileCell(2000),
+    maxDelayMs: volatileCell(30000),
+    jitterRatio: volatileCell(0.25),
+    respectRetryAfter: volatileCell(false),
+    configErrorBehavior: volatileCell('bounded'),
+    logRetries: volatileCell(false),
+  }
+  const config = Object.fromEntries(Object.entries(cells).map(([key, cell]) => [key, cell.ref]))
+  const settings = resolveSettings(config)
+  assert.equal(settings.maxRetries, 3)
+  assert.equal(settings.initialDelayMs, 2000)
+  assert.equal(settings.maxDelayMs, 30000)
+  assert.equal(settings.jitterRatio, 0.25)
+  assert.equal(settings.respectRetryAfter, false)
+  assert.equal(settings.configErrorBehavior, 'bounded')
+  assert.equal(settings.logRetries, false)
+})
+
+test('a form write takes effect on the next failure without remounting', async () => {
+  const cells = {
+    initialDelayMs: volatileCell(1000),
+    maxDelayMs: volatileCell(60000),
+    jitterRatio: volatileCell(0),
+    maxRetries: volatileCell(0),
+    logRetries: volatileCell(false),
+  }
+  const config = Object.fromEntries(Object.entries(cells).map(([key, cell]) => [key, cell.ref]))
+
+  const { ctx } = createCtx()
+  const { delays, internals } = createInternals()
+  apply(ctx, config, internals)
+  const { agent, events } = createAgent()
+  const retries = () => events.filter((event) => event.type === 'llm/retry').length
+
+  assert.deepEqual(await ctx.dispatchRequestError(makePayload(agent)), { kind: 'retry' })
+  assert.equal(retries(), 1)
+  assert.deepEqual(delays, [1000])
+
+  // The operator narrows the budget on the Plugins page: the very next failure
+  // must honour it, and the delay curve must follow the edited ceiling.
+  cells.maxRetries.write(2)
+  cells.maxDelayMs.write(1500)
+  cells.initialDelayMs.write(2000)
+  assert.deepEqual(await ctx.dispatchRequestError(makePayload(agent)), { kind: 'retry' })
+  assert.equal(retries(), 2)
+  assert.deepEqual(delays, [1000, 1500])
+
+  // Attempt 3 exceeds the new limit of 2: the step ends with the provider
+  // failure instead of falling through to the shipped budget.
+  const shipped = []
+  ctx.on('agent/request-error', async () => {
+    shipped.push('shipped')
+    return undefined
+  })
+  assert.equal(await ctx.dispatchRequestError(makePayload(agent)), undefined)
+  assert.equal(retries(), 2)
+  assert.deepEqual(shipped, [])
+})
+
+// ---------------------------------------------------------------------------
 // Waterfall behaviour
 // ---------------------------------------------------------------------------
 
@@ -472,13 +573,19 @@ test('cancellation during the backoff wait stops before re-running the step', as
   assert.equal(events.filter((event) => event.type === 'llm/retry-started').length, 0)
 })
 
-test('disabled config registers no listeners at all', async () => {
+test('a disabled plugin stays mounted and delegates every failure', async () => {
   const { ctx, logs } = createCtx()
-  apply(ctx, { enabled: false })
-  assert.equal(ctx.listenerCount('agent/request-error'), 0)
-  assert.equal(ctx.listenerCount('session/event'), 0)
-  assert.equal(await ctx.dispatchRequestError(makePayload(createAgent().agent)), undefined)
+  const { internals } = createInternals()
+  apply(ctx, { enabled: false }, internals)
+
+  // The listener stays registered: the switch is a live form field, so turning
+  // it back on must work without a remount.
+  assert.equal(ctx.listenerCount('agent/request-error'), 1)
   assert.ok(logs.some(([, message]) => message.includes('disabled by config')))
+
+  const { agent, events } = createAgent()
+  assert.equal(await ctx.dispatchRequestError(makePayload(agent)), undefined)
+  assert.equal(events.filter((event) => event.type === 'llm/retry').length, 0)
 })
 
 test('disposal removes both listeners', async () => {

@@ -2,7 +2,7 @@
 
 给 DeepSeek Harness 的模型请求加一层「**临时故障无限重试 + 封顶退避**」，同时让**配置类错误继续走内置重试逻辑**（默认 5 次、且只对可重试错误生效）。
 
-它是一个 Host 插件包（bundle），以 Loader 行 `llm-retry-boost` 挂载在 profile 里，零运行时依赖。
+它是一个 Host 插件包（bundle），以 Loader 行 `llm-retry-boost` 挂载在 profile 里；配置页是它的浏览器半身（`client.js`），注册到 Plugins 页面的 `plugins.row.config` 槽位。运行时依赖只有宿主自带的 `@deepseek-ai/schemastery`（peer，不随包安装）和页面里的 React。
 
 ---
 
@@ -68,7 +68,21 @@ delay(n) = min(initialDelayMs × 2^(n-1) × jitter, maxDelayMs)
 
 ## 3. 配置
 
-配置就写在 Loader 行上（默认值见 `cordis.patch.yml`）：
+### 3.1 在插件页面里改（推荐）
+
+侧边栏 **插件** → 已安装的 **LLM 无限重试（封顶退避）** → 这一行上的 **配置**，打开的就是这个插件的配置页。页面上直接改：
+
+- **重试预算**：`maxRetries`（`0` = 一直重试，直到服务恢复）
+- **等待曲线**：`initialDelayMs`（首次等待）、`maxDelayMs`（等待上限）、`jitterRatio`（抖动）
+- **其他行为**：`respectRetryAfter`、`configErrorBehavior`、`logRetries`、`enabled`
+
+每个字段都带一句说明和生效范围；被 profile 覆盖过的字段会显示「已覆盖」和「恢复默认」。改完点 **保存**，值会写进当前 profile 的配置并立即生效，**不需要重启**——插件在每次失败时读取当前值，而不是在启动时快照一次。
+
+白名单（`retryableCodes` / `retryableHttpStatuses`）**故意不放进表单**：它们决定的是「哪些失败归本插件管」，改动应该走下面 3.2 的 YAML，和它所在的 patch 一起被 review。
+
+### 3.2 写在 Loader 行上
+
+完整配置（默认值见 `cordis.patch.yml`）：
 
 ```yaml
 - insert:
@@ -89,7 +103,7 @@ delay(n) = min(initialDelayMs × 2^(n-1) × jitter, maxDelayMs)
 
 | 字段 | 默认 | 说明 |
 |---|---|---|
-| `enabled` | `true` | 关掉后完全不注册监听，等于没装。 |
+| `enabled` | `true` | 关掉后监听还在，但每个失败都原样交给内置执行器——所以可以在插件页面里随时再打开，不用重装。 |
 | `retryableCodes` | 内置 5 类 | 进入无限重试的失败码白名单。想连 `TRANSPORT` 都不无限重试（比如 baseURL 写错时快速失败），把它从列表里删掉。 |
 | `retryableHttpStatuses` | `408,425,429,500,502,503,504` | 匹配 `HTTP_<status>` 或 `failure.status`。 |
 | `maxRetries` | `0` | `0` = 无限；`>0` = 最多重试这么多次，用完就按失败结束当前 step（**不会**再叠加内置的 5 次）。 |
@@ -102,7 +116,7 @@ delay(n) = min(initialDelayMs × 2^(n-1) × jitter, maxDelayMs)
 
 > 未知字段会**直接报错**（loader 行加载失败并给出字段名），避免 YAML 拼错后静默使用默认值。
 
-改完 `cordis.patch.yml` 后由 Loader 热重载（或重启 profile）生效。
+改完 `cordis.patch.yml` 后由 Loader 热重载（或重启 profile）生效；插件页面保存的则是同一份 profile patch，所以两种改法看到的是同一份配置。
 
 ---
 
@@ -116,15 +130,27 @@ plugin_manager action: install_bundle target: "C:\\...\\dsh-llm-retry-boost"
 
 安装后 profile 的 `package.json` 会多出 `dsh-llm-retry-boost` 依赖与 bundle 条目，`node_modules` 里是一个指向本目录的 link——所以改代码后重启 DSH 就会用新文件。
 
+浏览器半身在 `package.json` 的 `dsh.client` 里声明，页面启动时由 `dsh-client-modules` 扫描进模块表。**从没有 `client.js` 的旧版升上来时，插件行已经加载、但页面还没扫描过新的客户端清单**：重启 DSH，或关掉再打开插件行之后刷新一次页面，配置页才会出现（之后改 `client.js` 由 client HMR 负责）。
+
 ---
 
 ## 5. 测试
 
 ```powershell
+npm test
+# 等价于
 node test/policy.test.mjs
+node test/client.test.mjs
 ```
 
-`test/policy.test.mjs` 用一个小型的 Cordis waterfall（`prepend` 顺序、`next()` 链、`session/event` feed）驱动真实的 `apply()`，断言：退避曲线与封顶、抖动区间、`Retry-After` 封顶、`step/start` 归零、配置错误委派、`bounded` 沿用内置预算与退避、有限 `maxRetries` 的终止、abort 不重试、卸载清理、以及「本插件先于内置执行器拿到失败」。
+`test/policy.test.mjs` 用一个小型的 Cordis waterfall（`prepend` 顺序、`next()` 链、`session/event` feed）驱动真实的 `apply()`，断言：退避曲线与封顶、抖动区间、`Retry-After` 封顶、`step/start` 归零、配置错误委派、`bounded` 沿用内置预算与退避、有限 `maxRetries` 的终止、abort 不重试、卸载清理、「本插件先于内置执行器拿到失败」，以及 `.volatile()` 引用被读穿、改值后下一次失败立即按新值决策。
+
+`test/client.test.mjs` 用一个极小的 React 替身驱动浏览器半身（`window.__ModuleLoader__` 工厂 + 组件函数），断言：注册的槽位与 key、字典、字段与默认值、只读/加载/不可用状态、保存时产生的精确 `set`/`unset` 操作、以及逐字段的非法值拦截。
+
+另外验证过的（本机）：
+
+- 把行在 Plugin Manager 里关掉再打开后，`Config.listConfigs` 的 `status` 从 `absent` 变成 `schema`，投影出的 JSON Schema 里八个可编辑字段带 `x-cordis.volatile: true`，两个白名单没有——说明宿主加载了 `Config`，Settings 会把它们投影成表单。
+- 通过 profile 的 junction 路径（`--preserve-symlinks`）直接加载 `lib/index.js`，`Config(...)` 校验、默认值、`resolveSettings` 读穿引用都正常。
 
 ---
 
@@ -134,3 +160,9 @@ node test/policy.test.mjs
 - 每次重试都是一次真实计费请求。
 - 退避计数不跨进程持久化（日志里有完整历史，但计数会从 1s 重新开始）。
 - provider 显式配置 `retryPolicy: always` 时，`delegate` 分支仍会被内置执行器无限重试（见 2.4）。
+
+---
+
+## 7. 许可
+
+[MIT](LICENSE)，Copyright (c) 2026 ohmykreee。
