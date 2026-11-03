@@ -1,0 +1,44 @@
+{
+  "name": "dsh-llm-retry-boost",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Unlimited capped-backoff retries for transient model-request failures, with configuration-class failures kept on the shipped retry policy.",
+  "license": "MIT",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "retry",
+    "backoff",
+    "llm"
+  ],
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./policy": "./lib/policy.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/policy.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "test/*.mjs",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node test/policy.test.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

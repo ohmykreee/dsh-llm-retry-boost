@@ -1,0 +1,32 @@
+# Bundle row for dsh-llm-retry-boost.
+#
+# This patch is a layer: it only inserts this plugin's own row. Tune the
+# `config` below (or override the row from your profile's cordis.patch.yml) to
+# control the policy. The shipped @deepseek-ai/dsh-llm-retry executor stays
+# mounted: the plugin delegates non-transient failures to it.
+- insert:
+    - id: llm-retry-boost
+      name: dsh-llm-retry-boost
+      config:
+        enabled: true
+        retryableCodes:
+          - EMPTY_RESPONSE
+          - RATE_LIMIT
+          - SERVER
+          - TIMEOUT
+          - TRANSPORT
+        retryableHttpStatuses:
+          - 408
+          - 425
+          - 429
+          - 500
+          - 502
+          - 503
+          - 504
+        maxRetries: 0
+        initialDelayMs: 1000
+        maxDelayMs: 60000
+        jitterRatio: 0.1
+        respectRetryAfter: true
+        configErrorBehavior: delegate
+        logRetries: true

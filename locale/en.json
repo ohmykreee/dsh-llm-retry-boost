@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Infinite LLM Retry (Capped Backoff)",
+    "description": "Retries transient model-request failures — overload, rate limit, timeout, transport — without an attempt limit under capped exponential backoff, while configuration-class failures keep the shipped retry policy."
+  }
+}
