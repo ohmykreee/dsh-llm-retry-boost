@@ -1,0 +1,125 @@
+# npm release for @ohmykreee/dsh-llm-retry-boost.
+#
+# Trigger: push a version tag (for example `git tag v1.0.1 && git push origin
+# v1.0.1`). A manual run only rehearses the release unless the dry-run toggle is
+# cleared, so a mis-click cannot publish.
+#
+# This bundle ships the files it runs: `lib/`, `client.js` and the locale files
+# are committed source, so there is no build step. There is also no separate
+# check workflow; the tests that gate a release run inside this job, which means
+# ordinary pushes stay cheap.
+#
+# Authentication is npm Trusted Publishing (OIDC): no token and no secret. The
+# `id-token: write` permission lets npm exchange the job's short-lived GitHub
+# identity for a one-time publish credential, and the attestation that comes
+# with it is what consumers can verify on npmjs.com.
+#
+# One-time setup on npmjs.com -> the package -> Settings -> Trusted publishing:
+#   Provider           GitHub Actions
+#   Organization/user  ohmykreee
+#   Repository         dsh-llm-retry-boost
+#   Workflow filename  publish-npm.yml   (the file name only)
+#   Environment        npm               (matches the job environment below)
+#
+# npm only accepts a trusted publisher for a package that already exists, so the
+# first release was published once from a checkout (1.0.0). A fresh trusted
+# publisher configuration must also complete its first successful publish within
+# 48 hours, so add it when a release is ready.
+name: Publish npm
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*'
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Run the release guard and the tests without publishing
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-npm-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: publish ${{ github.ref_name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The trusted publisher is registered against this environment name, and
+    # protection rules on the environment also gate the release.
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/@ohmykreee/dsh-llm-retry-boost
+    permissions:
+      contents: read
+      # The OIDC identity npm exchanges for a short-lived publish credential.
+      id-token: write
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          # Exact version, matching local development; its bundled npm is 11.x,
+          # which trusted publishing needs.
+          node-version: 26.7.0
+
+      # Fail before the tests when the environment cannot mint an OIDC token or
+      # ships an npm too old for trusted publishing.
+      - name: Check the npm client and OIDC
+        run: |
+          node --version
+          npm --version
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            echo "::error::No OIDC endpoint. The job needs 'permissions: id-token: write' for trusted publishing."
+            exit 1
+          fi
+          current=$(npm --version)
+          if [ "$(printf '%s\n%s\n' 11.5.1 "$current" | sort -V | head -n1)" != "11.5.1" ]; then
+            echo "::error::npm $current is too old for trusted publishing; npm 11.5.1 or newer is required."
+            exit 1
+          fi
+
+      # Manifest policy, the bundle row and browser factory names, the runtime
+      # files, the tag/version agreement, and the exact tarball contents.
+      - name: Verify the release
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            node scripts/check-release.mjs --tag "${GITHUB_REF_NAME}"
+          else
+            node scripts/check-release.mjs
+          fi
+
+      - name: Run the tests
+        run: npm test
+
+      - name: Resolve the dist-tag
+        id: release
+        run: |
+          version=$(node -p "require('./package.json').version")
+          case "$version" in
+            # Prereleases never take over `latest` from a released build.
+            *-*) tag=next ;;
+            *) tag=latest ;;
+          esac
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version $version -> dist-tag $tag"
+
+      - name: Publish to npm
+        env:
+          # Manual runs default to a rehearsal; only a tag push always uploads.
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
+        run: |
+          args=(--provenance --access public --tag "${{ steps.release.outputs.tag }}")
+          if [ "${DRY_RUN}" = "true" ]; then
+            echo "Dry run: package, guard and tests ran, nothing is uploaded."
+            args+=(--dry-run)
+          fi
+          npm publish "${args[@]}"
