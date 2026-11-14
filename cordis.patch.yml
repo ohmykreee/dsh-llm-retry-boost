@@ -1,4 +1,4 @@
-# Bundle row for dsh-llm-retry-boost.
+# Bundle row for @ohmykreee/dsh-llm-retry-boost.
 #
 # This patch is a layer: it only inserts this plugin's own row. The tunable
 # fields below are also editable from the Plugins page (they are the row's
@@ -11,7 +11,7 @@
 # delegates non-transient failures to it.
 - insert:
     - id: llm-retry-boost
-      name: dsh-llm-retry-boost
+      name: '@ohmykreee/dsh-llm-retry-boost'
       config:
         enabled: true
         retryableCodes:

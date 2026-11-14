@@ -1,9 +1,16 @@
 {
-  "name": "dsh-llm-retry-boost",
-  "version": "0.2.1",
-  "private": true,
+  "name": "@ohmykreee/dsh-llm-retry-boost",
+  "version": "1.0.0",
   "description": "Unlimited capped-backoff retries for transient model-request failures, with configuration-class failures kept on the shipped retry policy.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ohmykreee/dsh-llm-retry-boost.git"
+  },
+  "homepage": "https://github.com/ohmykreee/dsh-llm-retry-boost#readme",
+  "bugs": {
+    "url": "https://github.com/ohmykreee/dsh-llm-retry-boost/issues"
+  },
   "keywords": [
     "dsh",
     "dsh-plugin",
@@ -12,6 +19,11 @@
     "backoff",
     "llm"
   ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "registry": "https://registry.npmjs.org/"
+  },
   "type": "module",
   "main": "./lib/index.js",
   "exports": {

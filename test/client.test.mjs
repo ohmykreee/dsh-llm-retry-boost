@@ -57,7 +57,7 @@ await import(new URL('../client.js', import.meta.url).href)
 function loadModule() {
   assert.equal(loaded.length, 1, 'the module registers exactly one loader entry')
   const [entry] = loaded
-  assert.equal(entry.id, 'dsh-llm-retry-boost')
+  assert.equal(entry.id, '@ohmykreee/dsh-llm-retry-boost')
   return entry.factory((specifier) => {
     assert.equal(specifier, 'react', 'the browser half requires nothing but React')
     return ReactStub
@@ -193,7 +193,7 @@ test('the browser half declares its services and registers the row page', () => 
   assert.equal(registered.length, 1)
   const [{ options, component }] = registered
   assert.equal(options.name, 'plugins.row.config')
-  assert.equal(options.key, 'dsh-llm-retry-boost#llm-retry-boost')
+  assert.equal(options.key, '@ohmykreee/dsh-llm-retry-boost#llm-retry-boost')
   assert.equal(options.locale, 'llm-retry-boost')
   assert.equal(typeof component, 'function')
 

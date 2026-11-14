@@ -3,7 +3,7 @@
  *
  * The Plugins page renders one configuration page per row that registers into
  * `plugins.row.config`. This module registers the page for the plugin's own row
- * (`dsh-llm-retry-boost#llm-retry-boost`), so opening Plugins → LLM infinite
+ * (`@ohmykreee/dsh-llm-retry-boost#llm-retry-boost`), so opening Plugins → LLM infinite
  * retry (capped backoff) shows the retry budget, the wait curve, and the
  * non-transient fallback as editable fields.
  *
@@ -18,7 +18,7 @@
  * save takes effect without reloading anything.
  */
 window.__ModuleLoader__.load({
-  id: 'dsh-llm-retry-boost',
+  id: '@ohmykreee/dsh-llm-retry-boost',
   factory(require) {
     const React = require('react')
     const h = React.createElement
@@ -26,7 +26,7 @@ window.__ModuleLoader__.load({
     /** Locale namespace owned by this client half. */
     const NS = 'llm-retry-boost'
     /** Registration key: `<bundle package>#<row id>` as the bundle patch declares them. */
-    const ROW_KEY = 'dsh-llm-retry-boost#llm-retry-boost'
+    const ROW_KEY = '@ohmykreee/dsh-llm-retry-boost#llm-retry-boost'
 
     /** Simplified Chinese copy; the key source of truth. */
     const zh = {

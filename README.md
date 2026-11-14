@@ -1,4 +1,4 @@
-# dsh-llm-retry-boost
+# @ohmykreee/dsh-llm-retry-boost
 
 给 DeepSeek Harness 的模型请求加一层「**临时故障无限重试 + 封顶退避**」，同时让**配置类错误继续走内置重试逻辑**（默认 5 次、且只对可重试错误生效）。
 
@@ -89,7 +89,7 @@ delay(n) = min(initialDelayMs × 2^(n-1) × jitter, maxDelayMs)
 ```yaml
 - insert:
     - id: llm-retry-boost
-      name: dsh-llm-retry-boost
+      name: '@ohmykreee/dsh-llm-retry-boost'
       config:
         enabled: true
         retryableCodes: [EMPTY_RESPONSE, RATE_LIMIT, SERVER, TIMEOUT, TRANSPORT]
@@ -124,13 +124,22 @@ delay(n) = min(initialDelayMs × 2^(n-1) × jitter, maxDelayMs)
 
 ## 4. 安装
 
-通过 DSH 的 Plugin Manager（设置 → 插件 → 添加插件 → 填本目录的绝对路径），等价于：
+从 npm 安装（推荐）：
+
+1. DSH 设置 → 插件 → 安装插件，填 `@ohmykreee/dsh-llm-retry-boost`。
+2. 安装并启用，重启 DSH（或重新加载插件）。插件页会出现 **LLM 无限重试（封顶退避）** 这一行。
+
+也可以让 DSH 里的 agent 代装，把下面这句发给它：
+
+> 安装 `@ohmykreee/dsh-llm-retry-boost` 插件并启用。
+
+从源码安装（改代码时）：在 Plugin Manager 里填本目录的绝对路径，等价于：
 
 ```
 plugin_manager action: install_bundle target: "C:\\...\\dsh-llm-retry-boost"
 ```
 
-安装后 profile 的 `package.json` 会多出 `dsh-llm-retry-boost` 依赖与 bundle 条目，`node_modules` 里是一个指向本目录的 link——所以改代码后重启 DSH 就会用新文件。
+安装后 profile 的 `package.json` 会多出 `@ohmykreee/dsh-llm-retry-boost` 依赖与 bundle 条目，`node_modules` 里是一个指向源码目录的 link——所以改代码后重启 DSH 就会用新文件。
 
 浏览器半身在 `package.json` 的 `dsh.client` 里声明，页面启动时由 `dsh-client-modules` 扫描进模块表。**从没有 `client.js` 的旧版升上来时，插件行已经加载、但页面还没扫描过新的客户端清单**：重启 DSH，或关掉再打开插件行之后刷新一次页面，配置页才会出现（之后改 `client.js` 由 client HMR 负责）。
 
